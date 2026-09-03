@@ -37,6 +37,17 @@ export const errorMiddleware = (error, req, res, next) => {
     });
   }
 
+  // Malformed JSON body (thrown by express.json() body-parser)
+  if (error instanceof SyntaxError && error.status === 400 && "body" in error) {
+    return res.status(400).json({
+      success: false,
+      statusCode: 400,
+      message: "Invalid JSON payload",
+      errors: [],
+      data: null,
+    });
+  }
+
   // Mongoose duplicate key error
   if (error.code === 11000) {
     const field = Object.keys(error.keyValue)[0];
