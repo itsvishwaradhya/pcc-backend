@@ -50,6 +50,8 @@ const { default: mongoose } = await import("mongoose");
 const {
   approveTask,
   rejectTask,
+  acknowledgeTask,
+  resubmitTask,
 } = await import("../src/services/approval.service.js");
 
 describe("Approval workflow", () => {
@@ -191,5 +193,204 @@ describe("Approval workflow", () => {
     expect(Notification.create).not.toHaveBeenCalled();
 
     expect(MailOutbox.create).not.toHaveBeenCalled();
+  });
+
+  test("rejection fails when task is not submitted", async () => {
+    const task = {
+      _id: "task123",
+      title: "Build API",
+      status: "IN_PROGRESS",
+
+      engineer: {
+        _id: "engineer123",
+        email: "engineer@example.com",
+      },
+    };
+
+    Task.findOne.mockReturnValue({
+      populate: jest.fn().mockResolvedValue(task),
+    });
+
+    await expect(
+      rejectTask(
+        "task123",
+        "manager123",
+        "Not good enough"
+      )
+    ).rejects.toThrow(
+      "Only submitted tasks can be rejected"
+    );
+
+    expect(session.abortTransaction).toHaveBeenCalled();
+
+    expect(AuditLog.create).not.toHaveBeenCalled();
+
+    expect(Notification.create).not.toHaveBeenCalled();
+
+    expect(MailOutbox.create).not.toHaveBeenCalled();
+  });
+
+  test("engineer can acknowledge an approved task", async () => {
+    const task = {
+      _id: "task123",
+      title: "Build API",
+      status: "APPROVED",
+
+      engineer: "engineer123",
+
+      save: jest.fn(),
+    };
+
+    // acknowledgeTask does NOT use .populate(), so return task directly
+    Task.findOne.mockResolvedValue(task);
+
+    const result = await acknowledgeTask(
+      "task123",
+      "engineer123"
+    );
+
+    expect(result.status).toBe("RESOLVED");
+
+    expect(task.save).toHaveBeenCalledWith({
+      session,
+    });
+
+    expect(AuditLog.create).toHaveBeenCalled();
+
+    expect(session.commitTransaction).toHaveBeenCalled();
+
+    expect(session.abortTransaction).not.toHaveBeenCalled();
+  });
+
+  test("engineer can acknowledge a rejected task", async () => {
+    const task = {
+      _id: "task123",
+      title: "Build API",
+      status: "REJECTED",
+
+      engineer: "engineer123",
+
+      save: jest.fn(),
+    };
+
+    Task.findOne.mockResolvedValue(task);
+
+    const result = await acknowledgeTask(
+      "task123",
+      "engineer123"
+    );
+
+    expect(result.status).toBe("RESOLVED");
+
+    expect(task.save).toHaveBeenCalledWith({
+      session,
+    });
+
+    expect(AuditLog.create).toHaveBeenCalled();
+
+    expect(session.commitTransaction).toHaveBeenCalled();
+
+    expect(session.abortTransaction).not.toHaveBeenCalled();
+  });
+
+  test("engineer can resubmit a rejected task", async () => {
+    const task = {
+      _id: "task123",
+      title: "Build API",
+      status: "REJECTED",
+
+      engineer: "engineer123",
+
+      save: jest.fn(),
+    };
+
+    Task.findOne.mockResolvedValue(task);
+
+    const result = await resubmitTask(
+      "task123",
+      "engineer123"
+    );
+
+    expect(result.status).toBe("IN_PROGRESS");
+
+    expect(task.save).toHaveBeenCalledWith({
+      session,
+    });
+
+    expect(AuditLog.create).toHaveBeenCalled();
+
+    expect(session.commitTransaction).toHaveBeenCalled();
+
+    expect(session.abortTransaction).not.toHaveBeenCalled();
+  });
+
+  test("acknowledgement fails when task is not approved or rejected", async () => {
+    const task = {
+      _id: "task123",
+      title: "Build API",
+      status: "NOT_STARTED",
+
+      engineer: "engineer123",
+    };
+
+    Task.findOne.mockResolvedValue(task);
+
+    await expect(
+      acknowledgeTask(
+        "task123",
+        "engineer123"
+      )
+    ).rejects.toThrow(
+      "Only approved or rejected tasks can be acknowledged"
+    );
+
+    expect(session.abortTransaction).toHaveBeenCalled();
+
+    expect(AuditLog.create).not.toHaveBeenCalled();
+  });
+
+  test("resubmission fails when task is not rejected", async () => {
+    const task = {
+      _id: "task123",
+      title: "Build API",
+      status: "APPROVED",
+
+      engineer: "engineer123",
+    };
+
+    Task.findOne.mockResolvedValue(task);
+
+    await expect(
+      resubmitTask(
+        "task123",
+        "engineer123"
+      )
+    ).rejects.toThrow(
+      "Only rejected tasks can be resubmitted"
+    );
+
+    expect(session.abortTransaction).toHaveBeenCalled();
+
+    expect(AuditLog.create).not.toHaveBeenCalled();
+  });
+
+  test("approval fails when task is not found", async () => {
+    // Task.findOne returns null (no .populate() needed since it short-circuits)
+    Task.findOne.mockReturnValue({
+      populate: jest.fn().mockResolvedValue(null),
+    });
+
+    await expect(
+      approveTask(
+        "task123",
+        "manager123"
+      )
+    ).rejects.toThrow(
+      "Task not found"
+    );
+
+    expect(session.abortTransaction).toHaveBeenCalled();
+
+    expect(AuditLog.create).not.toHaveBeenCalled();
   });
 });
