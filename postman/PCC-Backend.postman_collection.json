@@ -1,0 +1,479 @@
+{
+  "info": {
+    "name": "PCC Backend",
+    "description": "Task assignment → approval → notification/audit workflow.\n\nHOW TO USE:\n1. Import this collection AND the PCC-Backend environment file.\n2. Select the \"PCC-Backend\" environment (top-right).\n3. Make sure the server is running (`npm run dev`).\n4. Either run requests top-to-bottom manually, or use the Collection Runner to execute the whole flow in order.\n\nIDs (managerId, engineerId, taskId, notificationId) are captured automatically via test scripts — no manual copy-paste needed.\n\nNOTE: Auth uses an httpOnly cookie. Postman stores it automatically, so you must run Login requests before authenticated ones. When switching roles (manager ↔ engineer), run the corresponding Login request first.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Register, login and logout. Login sets an httpOnly cookie that Postman stores automatically.",
+      "item": [
+        {
+          "name": "Register Manager",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alice Manager\",\n  \"email\": \"alice.manager@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"MANAGER\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "var json = pm.response.json();",
+                  "pm.test(\"User has MANAGER role\", function () { pm.expect(json.data.role).to.eql(\"MANAGER\"); });",
+                  "if (json.data && json.data.id) { pm.environment.set(\"managerId\", json.data.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register Engineer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Bob Engineer\",\n  \"email\": \"bob.engineer@example.com\",\n  \"password\": \"password123\",\n  \"role\": \"ENGINEER\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "var json = pm.response.json();",
+                  "pm.test(\"User has ENGINEER role\", function () { pm.expect(json.data.role).to.eql(\"ENGINEER\"); });",
+                  "if (json.data && json.data.id) { pm.environment.set(\"engineerId\", json.data.id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Manager",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"alice.manager@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Login sets auth cookie\", function () { pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.include(\"token=\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login as Engineer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"bob.engineer@example.com\",\n  \"password\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Login sets auth cookie\", function () { pm.expect(pm.response.headers.get(\"Set-Cookie\")).to.include(\"token=\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/auth/logout", "host": ["{{baseUrl}}"], "path": ["api", "auth", "logout"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "description": "Task lifecycle: create → list → start → submit. Run \"Login as Manager\" before Create Task, and \"Login as Engineer\" before the engineer actions.",
+      "item": [
+        {
+          "name": "Create Task (Manager)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/tasks", "host": ["{{baseUrl}}"], "path": ["api", "tasks"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Build approval workflow API\",\n  \"description\": \"Implement the assignment, approval and notification flow end to end.\",\n  \"dueDate\": \"2026-12-31T00:00:00.000Z\",\n  \"priority\": \"HIGH\",\n  \"engineerId\": \"{{engineerId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 201\", function () { pm.response.to.have.status(201); });",
+                  "var json = pm.response.json();",
+                  "pm.test(\"Task starts as NOT_STARTED\", function () { pm.expect(json.data.status).to.eql(\"NOT_STARTED\"); });",
+                  "if (json.data && json.data._id) { pm.environment.set(\"taskId\", json.data._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get My Tasks (Engineer)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/my", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "my"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Managed Tasks (Manager)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/managed", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "managed"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Task by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Task Audit Log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/audit", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "audit"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Audit log is an array\", function () { pm.expect(pm.response.json().data).to.be.an(\"array\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Start Task (Engineer)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/start", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "start"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Task is IN_PROGRESS\", function () { pm.expect(pm.response.json().data.status).to.eql(\"IN_PROGRESS\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit Task (Engineer)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/submit", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "submit"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Task is SUBMITTED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"SUBMITTED\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Approval Workflow",
+      "description": "Manager approve/reject and engineer acknowledge/resubmit. Run \"Login as Manager\" before Approve/Reject, and \"Login as Engineer\" before Acknowledge/Resubmit. Task must be SUBMITTED for approve/reject to succeed.",
+      "item": [
+        {
+          "name": "Approve Task (Manager)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/approve", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "approve"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Task is APPROVED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"APPROVED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject Task (Manager)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/reject", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "reject"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rejectionReason\": \"Please improve error handling and add input validation.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Task is REJECTED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"REJECTED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Acknowledge Decision (Engineer)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/acknowledge", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "acknowledge"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Task is RESOLVED\", function () { pm.expect(pm.response.json().data.status).to.eql(\"RESOLVED\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resubmit Task (Engineer)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/resubmit", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "resubmit"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Task is back to IN_PROGRESS\", function () { pm.expect(pm.response.json().data.status).to.eql(\"IN_PROGRESS\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "description": "List the engineer's notifications and mark one as read.",
+      "item": [
+        {
+          "name": "Get My Notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/notifications", "host": ["{{baseUrl}}"], "path": ["api", "notifications"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "var json = pm.response.json();",
+                  "if (json.data && json.data.length > 0) { pm.environment.set(\"notificationId\", json.data[0]._id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark Notification as Read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/notifications/{{notificationId}}/read", "host": ["{{baseUrl}}"], "path": ["api", "notifications", "{{notificationId}}", "read"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status is 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Notification is read\", function () { pm.expect(pm.response.json().data.isRead).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Negative and RBAC Cases",
+      "description": "Proves authentication and role-based access control work. Each request asserts its expected error status.",
+      "item": [
+        {
+          "name": "Engineer tries to Create Task (403)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/tasks", "host": ["{{baseUrl}}"], "path": ["api", "tasks"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Should be forbidden\",\n  \"description\": \"Engineers cannot create tasks.\",\n  \"dueDate\": \"2026-12-31T00:00:00.000Z\",\n  \"priority\": \"LOW\",\n  \"engineerId\": \"{{engineerId}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "description": "Run \"Login as Engineer\" first, then this. Expect 403 Forbidden."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 403\", function () { pm.response.to.have.status(403); });"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manager tries to Start Task (403)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/start", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "start"] },
+            "description": "Run \"Login as Manager\" first, then this. Expect 403 Forbidden."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 403\", function () { pm.response.to.have.status(403); });"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Approve without Login (401)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/{{taskId}}/approve", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "{{taskId}}", "approve"] },
+            "description": "Clear cookies (or use an incognito/no-cookie tab) before running. Expect 401."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 401\", function () { pm.response.to.have.status(401); });"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Task with Invalid ObjectId (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/tasks/not-a-valid-id", "host": ["{{baseUrl}}"], "path": ["api", "tasks", "not-a-valid-id"] },
+            "description": "Run any Login first. Expect 400 Bad Request."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": ["pm.test(\"Status is 400\", function () { pm.response.to.have.status(400); });"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -24,9 +24,10 @@ jest.unstable_mockModule("../src/models/MailOutbox.js", () => ({
   },
 }));
 
+// validators.js calls mongoose.Types.ObjectId.isValid(), so the mock
+// must provide it (returns true so IDs pass validation in tests).
 jest.unstable_mockModule("mongoose", () => ({
   default: {
-    startSession: jest.fn(),
     Types: {
       ObjectId: {
         isValid: jest.fn().mockReturnValue(true),
@@ -45,7 +46,6 @@ const { default: Notification } = await import(
 const { default: MailOutbox } = await import(
   "../src/models/MailOutbox.js"
 );
-const { default: mongoose } = await import("mongoose");
 
 const {
   approveTask,
@@ -55,21 +55,10 @@ const {
 } = await import("../src/services/approval.service.js");
 
 describe("Approval workflow", () => {
-  let session;
-
   beforeEach(() => {
-    session = {
-      startTransaction: jest.fn(),
-      commitTransaction: jest.fn(),
-      abortTransaction: jest.fn(),
-      endSession: jest.fn(),
-    };
-
-    mongoose.startSession.mockResolvedValue(session);
-
-    AuditLog.create.mockResolvedValue([]);
-    Notification.create.mockResolvedValue([]);
-    MailOutbox.create.mockResolvedValue([]);
+    AuditLog.create.mockResolvedValue({});
+    Notification.create.mockResolvedValue({});
+    MailOutbox.create.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -103,19 +92,13 @@ describe("Approval workflow", () => {
 
     expect(result.status).toBe("APPROVED");
 
-    expect(task.save).toHaveBeenCalledWith({
-      session,
-    });
+    expect(task.save).toHaveBeenCalledWith();
 
     expect(AuditLog.create).toHaveBeenCalled();
 
     expect(Notification.create).toHaveBeenCalled();
 
     expect(MailOutbox.create).toHaveBeenCalled();
-
-    expect(session.commitTransaction).toHaveBeenCalled();
-
-    expect(session.abortTransaction).not.toHaveBeenCalled();
   });
 
   test("manager can reject a submitted task", async () => {
@@ -146,19 +129,13 @@ describe("Approval workflow", () => {
 
     expect(result.status).toBe("REJECTED");
 
-    expect(task.save).toHaveBeenCalledWith({
-      session,
-    });
+    expect(task.save).toHaveBeenCalledWith();
 
     expect(AuditLog.create).toHaveBeenCalled();
 
     expect(Notification.create).toHaveBeenCalled();
 
     expect(MailOutbox.create).toHaveBeenCalled();
-
-    expect(session.commitTransaction).toHaveBeenCalled();
-
-    expect(session.abortTransaction).not.toHaveBeenCalled();
   });
 
   test("approval fails when task is not submitted", async () => {
@@ -185,8 +162,6 @@ describe("Approval workflow", () => {
     ).rejects.toThrow(
       "Only submitted tasks can be approved"
     );
-
-    expect(session.abortTransaction).toHaveBeenCalled();
 
     expect(AuditLog.create).not.toHaveBeenCalled();
 
@@ -221,8 +196,6 @@ describe("Approval workflow", () => {
       "Only submitted tasks can be rejected"
     );
 
-    expect(session.abortTransaction).toHaveBeenCalled();
-
     expect(AuditLog.create).not.toHaveBeenCalled();
 
     expect(Notification.create).not.toHaveBeenCalled();
@@ -251,15 +224,9 @@ describe("Approval workflow", () => {
 
     expect(result.status).toBe("RESOLVED");
 
-    expect(task.save).toHaveBeenCalledWith({
-      session,
-    });
+    expect(task.save).toHaveBeenCalledWith();
 
     expect(AuditLog.create).toHaveBeenCalled();
-
-    expect(session.commitTransaction).toHaveBeenCalled();
-
-    expect(session.abortTransaction).not.toHaveBeenCalled();
   });
 
   test("engineer can acknowledge a rejected task", async () => {
@@ -282,15 +249,9 @@ describe("Approval workflow", () => {
 
     expect(result.status).toBe("RESOLVED");
 
-    expect(task.save).toHaveBeenCalledWith({
-      session,
-    });
+    expect(task.save).toHaveBeenCalledWith();
 
     expect(AuditLog.create).toHaveBeenCalled();
-
-    expect(session.commitTransaction).toHaveBeenCalled();
-
-    expect(session.abortTransaction).not.toHaveBeenCalled();
   });
 
   test("engineer can resubmit a rejected task", async () => {
@@ -313,15 +274,9 @@ describe("Approval workflow", () => {
 
     expect(result.status).toBe("IN_PROGRESS");
 
-    expect(task.save).toHaveBeenCalledWith({
-      session,
-    });
+    expect(task.save).toHaveBeenCalledWith();
 
     expect(AuditLog.create).toHaveBeenCalled();
-
-    expect(session.commitTransaction).toHaveBeenCalled();
-
-    expect(session.abortTransaction).not.toHaveBeenCalled();
   });
 
   test("acknowledgement fails when task is not approved or rejected", async () => {
@@ -343,8 +298,6 @@ describe("Approval workflow", () => {
     ).rejects.toThrow(
       "Only approved or rejected tasks can be acknowledged"
     );
-
-    expect(session.abortTransaction).toHaveBeenCalled();
 
     expect(AuditLog.create).not.toHaveBeenCalled();
   });
@@ -369,13 +322,10 @@ describe("Approval workflow", () => {
       "Only rejected tasks can be resubmitted"
     );
 
-    expect(session.abortTransaction).toHaveBeenCalled();
-
     expect(AuditLog.create).not.toHaveBeenCalled();
   });
 
   test("approval fails when task is not found", async () => {
-    // Task.findOne returns null (no .populate() needed since it short-circuits)
     Task.findOne.mockReturnValue({
       populate: jest.fn().mockResolvedValue(null),
     });
@@ -388,8 +338,6 @@ describe("Approval workflow", () => {
     ).rejects.toThrow(
       "Task not found"
     );
-
-    expect(session.abortTransaction).toHaveBeenCalled();
 
     expect(AuditLog.create).not.toHaveBeenCalled();
   });
