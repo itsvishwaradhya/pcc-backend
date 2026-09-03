@@ -2,6 +2,8 @@
 
 ### Install packages and Dev dependencies
 
+use bash
+
 ```bash
 npm i express mongoose dotenv jsonwebtoken bcryptjs cookie-parser && npm i -D nodemon
 ```
