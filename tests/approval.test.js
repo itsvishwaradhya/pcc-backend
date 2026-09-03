@@ -27,6 +27,11 @@ jest.unstable_mockModule("../src/models/MailOutbox.js", () => ({
 jest.unstable_mockModule("mongoose", () => ({
   default: {
     startSession: jest.fn(),
+    Types: {
+      ObjectId: {
+        isValid: jest.fn().mockReturnValue(true),
+      },
+    },
   },
 }));
 

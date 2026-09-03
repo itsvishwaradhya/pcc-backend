@@ -1,66 +1,64 @@
-import {
-  registerUser,
-  loginUser,
-} from "../services/auth.service.js";
+/**
+ * Authentication controller.
+ *
+ * Handles user registration, login (JWT cookie), and logout.
+ */
+import { registerUser, loginUser } from "../services/auth.service.js";
+import asyncHandler from "../utils/asyncHandler.js";
+import ApiResponse from "../utils/ApiResponse.js";
+import config from "../config/config.js";
 
-export const register = async (req, res) => {
-  try {
-    const { name, email, password, role } = req.body;
+/**
+ * POST /api/auth/register
+ *
+ * @body {string} name     - User's display name.
+ * @body {string} email    - Unique email address.
+ * @body {string} password - Minimum 6 characters.
+ * @body {string} role     - "MANAGER" or "ENGINEER".
+ */
+export const register = asyncHandler(async (req, res) => {
+  const { name, email, password, role } = req.body;
 
-    const user = await registerUser({
-      name,
-      email,
-      password,
-      role,
-    });
+  const user = await registerUser({ name, email, password, role });
 
-    res.status(201).json({
-      message: "User registered successfully",
-      user,
-    });
-  } catch (error) {
-    res.status(400).json({
-      message: error.message,
-    });
-  }
-};
+  return ApiResponse.success(res, user, "User registered successfully", 201);
+});
 
-export const login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
+/**
+ * POST /api/auth/login
+ *
+ * Sets an httpOnly cookie containing the signed JWT.
+ *
+ * @body {string} email
+ * @body {string} password
+ */
+export const login = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
 
-    const { token, user } = await loginUser({
-      email,
-      password,
-    });
+  const { token, user } = await loginUser({ email, password });
 
-    res
-      .cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 24 * 60 * 60 * 1000,
-      })
-      .status(200)
-      .json({
-        message: "Login successful",
-        user,
-      });
-  } catch (error) {
-    res.status(401).json({
-      message: error.message,
-    });
-  }
-};
+  // Set the JWT as an httpOnly cookie (not accessible via JS)
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: config.NODE_ENV === "production",
+    sameSite: "strict",
+    maxAge: 24 * 60 * 60 * 1000, // 1 day
+  });
 
-export const logout = async (req, res) => {
+  return ApiResponse.success(res, user, "Login successful");
+});
+
+/**
+ * POST /api/auth/logout
+ *
+ * Clears the JWT cookie.
+ */
+export const logout = asyncHandler(async (req, res) => {
   res.clearCookie("token", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: config.NODE_ENV === "production",
     sameSite: "strict",
   });
 
-  res.status(200).json({
-    message: "Logout successful",
-  });
-};
+  return ApiResponse.success(res, null, "Logout successful");
+});

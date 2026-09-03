@@ -1,47 +1,50 @@
-import Notification from "../models/Notification.js";
+/**
+ * Notification controller.
+ *
+ * Exposes HTTP endpoints for the in-app notification system:
+ *   - GET    /                       → getMyNotifications
+ *   - PATCH  /:notificationId/read   → markNotificationAsRead
+ *
+ * Delegates all business logic to the notification service layer.
+ */
+import {
+  getMyNotifications as getMyNotificationsService,
+  markAsRead,
+} from "../services/notification.service.js";
+import asyncHandler from "../utils/asyncHandler.js";
+import ApiResponse from "../utils/ApiResponse.js";
 
-export const getMyNotifications = async (req, res) => {
-  try {
-    const notifications = await Notification.find({
-      recipient: req.user.userId,
-    })
-      .populate("task", "title status")
-      .sort({ createdAt: -1 });
+/**
+ * GET /api/notifications
+ *
+ * Fetch all notifications for the authenticated user, newest first.
+ * Requires authentication (any role).
+ */
+export const getMyNotifications = asyncHandler(async (req, res) => {
+  const notifications = await getMyNotificationsService(req.user.userId);
 
-    res.status(200).json({
-      notifications,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: error.message,
-    });
-  }
-};
+  return ApiResponse.success(
+    res,
+    notifications,
+    "Notifications fetched successfully"
+  );
+});
 
-export const markNotificationAsRead = async (req, res) => {
-  try {
-    const notification = await Notification.findOne({
-      _id: req.params.notificationId,
-      recipient: req.user.userId,
-    });
+/**
+ * PATCH /api/notifications/:notificationId/read
+ *
+ * Mark a single notification as read.
+ * The notification must belong to the authenticated user.
+ */
+export const markNotificationAsRead = asyncHandler(async (req, res) => {
+  const notification = await markAsRead(
+    req.params.notificationId,
+    req.user.userId
+  );
 
-    if (!notification) {
-      return res.status(404).json({
-        message: "Notification not found",
-      });
-    }
-
-    notification.isRead = true;
-
-    await notification.save();
-
-    res.status(200).json({
-      message: "Notification marked as read",
-      notification,
-    });
-  } catch (error) {
-    res.status(500).json({
-      message: error.message,
-    });
-  }
-};
+  return ApiResponse.success(
+    res,
+    notification,
+    "Notification marked as read"
+  );
+});
